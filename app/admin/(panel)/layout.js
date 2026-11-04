@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireAdminPage } from "../../../lib/auth";
 import LogoutButton from "./LogoutButton";
 
@@ -10,8 +11,13 @@ export default async function PanelLayout({ children }) {
   return (
     <div>
       <header style={{ background: "#fff", borderBottom: "1px solid #e3e5f0" }}>
-        <div className="shell" style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-          <b style={{ color: "var(--navy)" }}>CSM Admin</b>
+        <div className="shell" style={{ padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <nav style={{ display: "flex", alignItems: "center", gap: 20 }}>
+            <b style={{ color: "var(--navy)" }}>CSM Admin</b>
+            <Link href="/admin">Dashboard</Link>
+            <Link href="/admin/responses">Responses</Link>
+            <Link href="/admin/form">Form editor</Link>
+          </nav>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <span className="hint" style={{ margin: 0 }}>{admin.email}</span>
             <LogoutButton />
