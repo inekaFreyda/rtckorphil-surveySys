@@ -1,94 +1,66 @@
-import Link from "next/link";
-import { Timestamp } from "firebase-admin/firestore";
-import { db } from "../../../../lib/firebaseAdmin";
-import { requireAdminPage } from "../../../../lib/auth";
-import { fmtDate, display } from "../../../../lib/format";
+import { db } from "../../../lib/firebaseAdmin";
+import { requireAdminPage } from "../../../lib/auth";
+import { getSettings, isFormOpen } from "../../../lib/questions";
+import FormStatus from "./FormStatus";
 
 export const dynamic = "force-dynamic";
-const PAGE = 20;
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
-export default async function Responses({ searchParams }) {
+const iso = (v) => {
+  const d = v?.toDate ? v.toDate() : v ? new Date(v) : null;
+  return d ? d.toISOString() : null;
+};
+
+// Start of "today" in Philippine time (UTC+8), since the server may run in UTC
+function manilaDayStart() {
+  const off = 8 * 3600 * 1000;
+  const shifted = Date.now() + off;
+  return new Date(shifted - (shifted % 86400000) - off);
+}
+
+const count = async (q) => (await q.count().get()).data().count;
+
+export default async function Dashboard() {
   await requireAdminPage();
-  const sp = await searchParams;
-  const from = DAY.test(sp.from ?? "") ? sp.from : "";
-  const to = DAY.test(sp.to ?? "") ? sp.to : "";
-  const after = /^\d+$/.test(sp.after ?? "") ? sp.after : "";
 
-  // Date filter uses Philippine time
-  let list = db.collection("responses").orderBy("createdAt", "desc");
-  let all = db.collection("responses");
-  if (from) {
-    const d = new Date(`${from}T00:00:00+08:00`);
-    list = list.where("createdAt", ">=", d);
-    all = all.where("createdAt", ">=", d);
-  }
-  if (to) {
-    const d = new Date(`${to}T23:59:59.999+08:00`);
-    list = list.where("createdAt", "<=", d);
-    all = all.where("createdAt", "<=", d);
-  }
-  const total = (await all.count().get()).data().count;
-  if (after) list = list.startAfter(Timestamp.fromMillis(Number(after)));
+  const settings = await getSettings();
+  const col = db.collection("responses");
+  const [total, today, rated, satisfied] = await Promise.all([
+    count(col),
+    count(col.where("createdAt", ">=", manilaDayStart())),
+    count(col.where("answers.sqd0", "in", ["1", "2", "3", "4", "5"])),
+    count(col.where("answers.sqd0", "in", ["4", "5"])),
+  ]);
+  const rate = rated ? Math.round((satisfied / rated) * 1000) / 10 : null;
 
-  const docs = (await list.limit(PAGE + 1).get()).docs;
-  const rows = docs.slice(0, PAGE);
-  const hasMore = docs.length > PAGE;
-  const olderAfter = rows.length ? rows[rows.length - 1].data().createdAt.toMillis() : "";
-
-  const exportQs = from || to ? `?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}` : "";
-
-  const href = (extra) => {
-    const p = new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...extra });
-    return `/admin/responses${p.size ? `?${p}` : ""}`;
-  };
+  const stats = [
+    ["Total responses", total],
+    ["Today", today],
+    ["Satisfied (SQD0)", rate === null ? "—" : `${rate}%`],
+  ];
 
   return (
-    <div className="panel">
-      <h2>Responses</h2>
-      <p className="hint">{total} {total === 1 ? "response" : "responses"}{from || to ? " in this date range" : ""}.</p>
-
-      <form method="GET" style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}>
-        <div><label className="uk-form-label">From</label><input type="date" name="from" className="uk-input" defaultValue={from} /></div>
-        <div><label className="uk-form-label">To</label><input type="date" name="to" className="uk-input" defaultValue={to} /></div>
-        <button className="uk-btn uk-btn-primary" type="submit">Filter</button>
-        {(from || to) && <Link href="/admin/responses" className="uk-btn uk-btn-default">Clear</Link>}
-      </form>
-
-      <p style={{ marginBottom: 16 }}>
-        <a className="uk-btn uk-btn-default" href={`/api/admin/export${exportQs}`}>
-          Download CSV{from || to ? " (this date range)" : " (all responses)"}
-        </a>
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16, marginBottom: 20 }}>
+        {stats.map(([label, value]) => (
+          <div className="panel" key={label} style={{ marginBottom: 0 }}>
+            <p className="hint" style={{ margin: 0 }}>{label}</p>
+            <div style={{ fontSize: "2rem", fontWeight: 700, color: "var(--navy)" }}>{value}</div>
+          </div>
+        ))}
+      </div>
+      <p className="hint" style={{ marginTop: -4 }}>
+        Satisfied = share of “Agree” or “Strongly Agree” answers to SQD0, not counting N/A.
       </p>
 
-      <div style={{ overflowX: "auto" }}>
-        <table className="uk-table uk-table-divider uk-table-hover uk-table-sm" style={{ minWidth: 640 }}>
-          <thead>
-            <tr><th>Submitted</th><th>Name</th><th>Client type</th><th>Service availed</th><th>SQD0</th></tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 && <tr><td colSpan={5}>No responses found.</td></tr>}
-            {rows.map((d) => {
-              const r = d.data();
-              const a = r.answers ?? {};
-              return (
-                <tr key={d.id}>
-                  <td><Link href={`/admin/responses/${d.id}`}><b>{fmtDate(r.createdAt)}</b></Link></td>
-                  <td>{a.name || "—"}</td>
-                  <td>{a.clientType || "—"}</td>
-                  <td>{a.service || "—"}</td>
-                  <td>{display("scale", a.sqd0)}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
-        {after ? <Link href={href({})}>← Back to newest</Link> : <span />}
-        {hasMore ? <Link href={href({ after: olderAfter })}>Older →</Link> : <span />}
-      </div>
-    </div>
+      <FormStatus
+        accepting={isFormOpen(settings)}
+        initial={{
+          isOpen: !!settings.isOpen,
+          closedMessage: settings.closedMessage || "",
+          opensAt: iso(settings.opensAt),
+          closesAt: iso(settings.closesAt),
+        }}
+      />
+    </>
   );
 }

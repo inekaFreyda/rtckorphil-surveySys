@@ -36,6 +36,8 @@ export default async function Responses({ searchParams }) {
   const hasMore = docs.length > PAGE;
   const olderAfter = rows.length ? rows[rows.length - 1].data().createdAt.toMillis() : "";
 
+  const exportQs = from || to ? `?${new URLSearchParams({ ...(from && { from }), ...(to && { to }) })}` : "";
+
   const href = (extra) => {
     const p = new URLSearchParams({ ...(from && { from }), ...(to && { to }), ...extra });
     return `/admin/responses${p.size ? `?${p}` : ""}`;
@@ -52,6 +54,12 @@ export default async function Responses({ searchParams }) {
         <button className="uk-btn uk-btn-primary" type="submit">Filter</button>
         {(from || to) && <Link href="/admin/responses" className="uk-btn uk-btn-default">Clear</Link>}
       </form>
+
+      <p style={{ marginBottom: 16 }}>
+        <a className="uk-btn uk-btn-default" href={`/api/admin/export${exportQs}`}>
+          Download CSV{from || to ? " (this date range)" : " (all responses)"}
+        </a>
+      </p>
 
       <div style={{ overflowX: "auto" }}>
         <table className="uk-table uk-table-divider uk-table-hover uk-table-sm" style={{ minWidth: 640 }}>
